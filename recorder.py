@@ -28,7 +28,7 @@ MIN_SAVE_BYTES = 1_000_000
 USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
     "AppleWebKit/537.36 (KHTML, like Gecko) "
-    "Chrome/124.0.0.0 Safari/537.36"
+    "Chrome/110.0.0.0 Safari/537.36"
 )
 
 BLOCK_MARKERS = ["cloudflare", "captcha", "forbidden", "http error 403", "403"]
@@ -267,7 +267,7 @@ def ytdlp_live_probe():
     return None
 
 def get_live():
-    return ytdlp_live_probe() or api_live_probe()
+    return api_live_probe() or ytdlp_live_probe()
 
 STOP_REQUESTED = False
 CURRENT_PROC = None
@@ -275,6 +275,17 @@ CURRENT_PROC = None
 def stop_proc(proc):
     if not proc or proc.poll() is not None:
         return
+    if os.name == "posix":
+        try:
+            os.killpg(proc.pid, signal.SIGTERM)
+            proc.wait(timeout=8)
+            return
+        except Exception:
+            try:
+                os.killpg(proc.pid, signal.SIGKILL)
+            except Exception:
+                pass
+            return
     proc.terminate()
     try:
         proc.wait(timeout=8)
@@ -362,6 +373,7 @@ def make_download_cmd(url, final_ts):
         "--retry-sleep", "fragment:1",
         "--hls-use-mpegts",
         "--downloader", "ffmpeg",
+        "--downloader-args", "ffmpeg:-loglevel warning -nostats",
         "-N", "1",
         "-f", "best[height<=720]/bestvideo[height<=720]+bestaudio/best",
         "-o", final_ts,
@@ -375,7 +387,7 @@ def run_download(url, final_ts, session_end, source_label):
     log(f"[{hms(session_end - time.time())} left] download_started | source={source_label} | url={url[:80]}")
     write_summary(status="download_started", failure_reason=None)
 
-    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, encoding="utf-8", errors="ignore")
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, encoding="utf-8", errors="ignore", start_new_session=True)
     CURRENT_PROC = proc
 
     state = {"blocked": False, "auth": False, "not_live": False}
